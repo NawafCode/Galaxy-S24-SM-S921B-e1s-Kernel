@@ -1,0 +1,17 @@
+/.cache/
+/out/
+/release/
+/backup/
+/kernel/
+/projects/
+/prebuilts/
+/tools/
+/resukisu/
+/SM-S921B.zip
+/NOTICE.html
+/WORKSPACE
+/publish-ready/
+/release-assets/
+/tools-*.tar.zst
+/Magisk-v30.7.apk
+__pycache__/

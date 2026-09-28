@@ -1,0 +1,127 @@
+name: Build e1s kernel
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - build.sh
+      - config/**
+      - patches/**
+      - scripts/**
+      - .github/workflows/build.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e1s-kernel-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    # Publishing input archives is a separate, manual operation.
+    if: vars.ENABLE_KERNEL_CI == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.decide.outputs.sha }}
+      key: ${{ steps.decide.outputs.key }}
+      needed: ${{ steps.decide.outputs.needed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Resolve inputs and check published builds
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci.py decide
+
+  build:
+    needs: check
+    if: needs.check.outputs.needed == 'true'
+    runs-on: ${{ vars.KERNEL_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Make room on the hosted runner
+        if: runner.environment == 'github-hosted'
+        run: |
+          # These preinstalled SDKs are unrelated to the pinned kernel toolchain.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+      - name: Check disk space and install build prerequisites
+        run: |
+          df -h .
+          available=$(df -PB1 . | awk 'NR==2 {print $4}')
+          if (( available < 60 * 1024 * 1024 * 1024 )); then
+            echo 'At least 60 GiB free is required. Set KERNEL_RUNNER to a larger Linux x64 runner.' >&2
+            exit 1
+          fi
+          sudo apt-get update
+          sudo apt-get install -y git curl python3 tar zstd zip unzip make util-linux coreutils
+      - name: Restore verified input archives
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .cache/downloads
+          key: e1s-inputs-v1-${{ runner.os }}-${{ hashFiles('config/inputs.env', 'config/tools.sha256') }}
+      - name: Prepare the exact selected inputs
+        env:
+          E1S_RESUKISU_SHA: ${{ needs.check.outputs.sha }}
+        run: ./build.sh --prepare
+      - name: Save verified input archives
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .cache/downloads
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - name: Build and verify packages
+        env:
+          E1S_RESUKISU_SHA: ${{ needs.check.outputs.sha }}
+        run: JOBS=$(nproc) ./build.sh
+      - name: Preserve packages for publication retries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kernel-${{ needs.check.outputs.key }}
+          path: |
+            release/*
+            out/build-info.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Preserve build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-log-${{ github.run_attempt }}
+          path: out/build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kernel-${{ needs.check.outputs.key }}
+          path: .
+      - name: Verify uploaded packages and publish Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_BUILD_KEY: ${{ needs.check.outputs.key }}
+          EXPECTED_RESUKISU_SHA: ${{ needs.check.outputs.sha }}
+        run: python3 scripts/ci.py publish

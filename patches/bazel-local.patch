@@ -1,0 +1,22 @@
+--- a/drivers/wlan/platform/Kbuild
++++ b/drivers/wlan/platform/Kbuild
+@@ -93,7 +93,7 @@
+ ifeq ($(CONFIG_SOC_S5E9945), y) # for root platfrom
+ KERNEL_BASE_DIR = $(findstring bazel, $(CURDIR))
+ ifneq ($(KERNEL_BASE_DIR),)
+-    export WLAN_PLATFORM_ROOT = ../../../kernel/drivers/wlan/platform/
++    export WLAN_PLATFORM_ROOT = $(srctree)/drivers/wlan/platform/
+ else # Use absolte path
+     export WLAN_PLATFORM_ROOT = $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+ endif
+--- a/drivers/wlan/qcacld-3.0/Kbuild
++++ b/drivers/wlan/qcacld-3.0/Kbuild
+@@ -14,7 +14,7 @@
+ ifeq ($(CONFIG_SOC_S5E9945), y) # for root platfrom
+ 	KERNEL_BASE_DIR = $(findstring bazel, $(CURDIR))
+ 	ifneq ($(KERNEL_BASE_DIR),)
+-		WLAN_ROOT := ../../../kernel/drivers/wlan/qcacld-3.0
++		WLAN_ROOT := $(srctree)/drivers/wlan/qcacld-3.0
+ 	else # Use absolte path
+ 		WLAN_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+ 	endif
