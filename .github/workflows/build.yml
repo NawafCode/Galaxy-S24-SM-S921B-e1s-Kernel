@@ -125,3 +125,20 @@ jobs:
           EXPECTED_BUILD_KEY: ${{ needs.check.outputs.key }}
           EXPECTED_RESUKISU_SHA: ${{ needs.check.outputs.sha }}
         run: python3 scripts/ci.py publish
+
+  manager:
+    needs: [check, build, release]
+    if: >-
+      always() && needs.check.result == 'success' &&
+      (needs.release.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Attach the latest official ARM64 manager
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci.py manager
