@@ -134,15 +134,14 @@ def main():
                 verify(info, Path(temp))
             print('This exact build is already published.')
             return
-        notes = (f"Samsung Galaxy S24 SM-S921B (e1s)\n\n"
-                 f"Kernel: {info['kernel_release']}\n\n"
-                 f"ReSukiSU: `{info['resukisu_sha']}`\n\n"
-                 f"Build: `{info['build_key']}`\n\n"
-                 "Software checks passed. Device flashing and boot have not been tested.\n\n"
-                 "SHA-256:\n```text\n" + ''.join(
-                     f'{digest}  {name}\n' for name, digest in info['assets'].items()) + '```\n')
+        # Keep the upstream identity machine-readable without cluttering the page.
+        notes = (f"Automated build for resukisu\n\n"
+                 f"Kernel Version: {info['kernel_version']}\n\n"
+                 f"<!--\nReSukiSU: `{info['resukisu_sha']}`\n"
+                 f"Build: `{info['build_key']}`\n-->\n")
         Path('out/release-notes.md').write_text(notes)
-        title = f"e1s {info['kernel_version']} ReSukiSU {info['resukisu_sha'][:7]} ({info['build_timestamp']})"
+        build_date = info['build_timestamp'].split('T')[0]
+        title = f"s24_Kernel Resuki-susfs-{info['kernel_version']} Build ({build_date})"
         if existing is None:
             gh('release', 'create', tag, '--draft', '--target', os.environ['GITHUB_SHA'],
                '--title', title, '--notes-file', 'out/release-notes.md')
