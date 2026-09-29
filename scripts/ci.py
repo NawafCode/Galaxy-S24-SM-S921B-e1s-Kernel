@@ -14,7 +14,6 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
-import zipfile
 
 
 def release_for(tag):
@@ -85,77 +84,6 @@ def gh(*args):
     subprocess.run(['gh', *args, '--repo', os.environ['GITHUB_REPOSITORY']], check=True)
 
 
-def update_manager():
-    repo = os.environ['GITHUB_REPOSITORY']
-    target = github_json(f'repos/{repo}/releases/latest')
-    if not target or not re.fullmatch(r'kernel-[0-9a-f]{64}', target['tag_name']):
-        print('No published kernel release to receive the manager.')
-        return
-    releases = []
-    page = 1
-    while True:
-        batch = github_json(f'repos/ReSukiSU/ReSukiSU/releases?per_page=100&page={page}')
-        if not isinstance(batch, list):
-            raise ValueError('Official manager release list is unavailable')
-        releases.extend(r for r in batch if not r['draft'])
-        if len(batch) < 100:
-            break
-        page += 1
-    for source in sorted(releases, key=lambda r: r['published_at'], reverse=True):
-        candidates = [a for a in source['assets'] if re.fullmatch(
-            r'ReSukiSU_[A-Za-z0-9_.-]+-arm64-v8a-release\.apk', a['name'])]
-        if candidates:
-            break
-    else:
-        print('No official ARM64 release APK is available yet.')
-        return
-    if len(candidates) != 1:
-        raise ValueError('Ambiguous official ARM64 APK assets')
-    asset = candidates[0]
-    digest = asset.get('digest') or ''
-    if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
-        raise ValueError('Official APK has no SHA-256 digest')
-    url = asset['browser_download_url']
-    if not url.startswith('https://github.com/ReSukiSU/ReSukiSU/releases/download/'):
-        raise ValueError('Unexpected official APK download URL')
-    tag, name = target['tag_name'], asset['name']
-    with tempfile.TemporaryDirectory() as temp:
-        directory = Path(temp)
-        apk = directory / name
-        with urllib.request.urlopen(url, timeout=60) as response:
-            apk.write_bytes(response.read())
-        if apk.stat().st_size != asset['size'] or hashlib.sha256(apk.read_bytes()).hexdigest() != digest[7:]:
-            raise ValueError('Official APK checksum or size mismatch')
-        with zipfile.ZipFile(apk) as archive:
-            if archive.testzip() or 'AndroidManifest.xml' not in archive.namelist():
-                raise ValueError('Invalid official APK')
-        present = next((a for a in target['assets'] if a['name'] == name), None)
-        if not present or present.get('digest') != digest:
-            gh('release', 'upload', tag, str(apk), '--clobber')
-        downloaded = directory / 'uploaded'
-        downloaded.mkdir()
-        gh('release', 'download', tag, '--pattern', name, '--dir', str(downloaded))
-        if hashlib.sha256((downloaded / name).read_bytes()).hexdigest() != digest[7:]:
-            raise ValueError('Uploaded APK checksum mismatch')
-        # Replace only our manager note; kernel identity and checksums stay intact.
-        body = re.sub(r'\n<!-- official-manager -->.*?<!-- /official-manager -->\n?',
-                      '', target.get('body', ''), flags=re.S)
-        status = ' (upstream prerelease)' if source['prerelease'] else ''
-        body += (f"\n<!-- official-manager -->\n## Official ReSukiSU manager\n\n"
-                 f"[{source['tag_name']}]({source['html_url']}){status}\n\n"
-                 f"`{name}` — SHA-256: `{digest[7:]}`\n\n"
-                 "Copied unchanged from the official release. Manager updates are independent "
-                 "of the kernel build SHA; device compatibility has not been tested.\n"
-                 "<!-- /official-manager -->\n")
-        notes = directory / 'notes.md'
-        notes.write_text(body)
-        gh('release', 'edit', tag, '--notes-file', str(notes))
-        for old in target['assets']:
-            if old['name'] != name and re.fullmatch(r'ReSukiSU_[A-Za-z0-9_.-]+-arm64-v8a-release\.apk', old['name']):
-                gh('release', 'delete-asset', tag, old['name'], '--yes')
-    print('Official manager verified and attached:', name)
-
-
 def verify(info, directory):
     assets = info['assets']
     expected = {'boot.img', 'boot.img.tar', info['anykernel_name']}
@@ -191,8 +119,6 @@ def main():
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write(f"sha={info['resukisu_sha']}\nkey={info['build_key']}\nneeded={str(needed).lower()}\n")
         print('Build required:', needed)
-    elif mode == 'manager':
-        update_manager()
     elif mode == 'publish':
         info = json.loads(Path('out/build-info.json').read_text())
         if info['build_key'] != os.environ['EXPECTED_BUILD_KEY']:
@@ -231,7 +157,7 @@ def main():
             verify(info, Path(temp))
         gh('release', 'edit', tag, '--draft=false', '--latest')
     else:
-        raise ValueError('Expected decide, publish or manager')
+        raise ValueError('Expected decide or publish')
 
 
 if __name__ == '__main__':

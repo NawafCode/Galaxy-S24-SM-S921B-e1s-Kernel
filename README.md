@@ -84,14 +84,12 @@ The default runner is `ubuntu-24.04`. The workflow removes unused Android/.NET/G
 
 The cache stores compressed input archives, not the compiled workspace. Restoring it still transfers data; extraction runs again, and SHA-256 checks always run. A cache miss falls back to the input release. No compiler cache is configured yet.
 
-Only the release and manager publication jobs have write access. It verifies the saved package checksums, uploads all three packages to a draft, downloads them for verification, then publishes the release as Latest. Failed builds leave the previous release available. Internal metadata and logs stay in Actions artifacts rather than public release assets.
+Only the release job has write access. It verifies the saved package checksums, uploads all three packages to a draft, downloads them for verification, then publishes the release as Latest. Failed builds leave the previous release available. Internal metadata and logs stay in Actions artifacts rather than public release assets.
 
 If publication fails after the package artifact was saved, use **Re-run failed jobs** within its 14-day retention period to retry publication without recompiling. A new workflow run does not automatically recover artifacts from older runs. Failed builds can be retried on the next trigger; only published successful builds are deduplicated. Schedules may be delayed by GitHub.
 
 `scripts/ci.py` handles the publication decision and release verification. It uses Python's standard library and the GitHub CLI already available on hosted runners. The internal `E1S_RESUKISU_SHA` handoff is restricted to Actions; normal local builds still resolve the latest upstream commit themselves. Neither the workflow nor the script flashes a phone.
 
-### Manager updates
+### When CI rebuilds
 
 CI compares the latest selected ReSukiSU commit with the last published kernel. If local build inputs are unchanged and the complete upstream diff touches only `manager/` or `docs/`, it keeps the existing kernel. Changes elsewhere, renamed kernel files, divergent history or incomplete comparisons trigger a build. Git-derived version numbers alone do not trigger a rebuild for manager/docs-only commits; the published kernel retains its actual SHA and version. Local `./build.sh` still builds the newest commit.
-
-A separate publication step attaches the newest official ARM64 release APK from ReSukiSU, including upstream prereleases clearly labeled in the release notes. It runs even when kernel compilation is skipped, checks the upstream SHA-256 and uploaded bytes, and replaces only older official manager APK attachments after successful verification. Kernel packages remain unchanged. This copies the official signed APK; it does not build or re-sign the manager. A source commit without an official APK must wait for an upstream release. APK and kernel commit versions may differ; compatibility on the phone is not yet tested.
