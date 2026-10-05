@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Samsung e1s with the latest ReSukiSU commit, then verify/package three boot assets.
+# Build Samsung e1s with the latest BakaSU commit, then verify/package three boot assets.
 # Downloads go to .cache/downloads; sources, logs and metadata go to out/.
 # Previous builds and changed release files are retained in out/.
 set -euo pipefail
@@ -29,7 +29,8 @@ WORK="$ROOT/out/bazel-workspace"
 DIST="$WORK/out/s5e9945_user/dist"
 DOWNLOADS="$ROOT/.cache/downloads"
 # Resolve the build inputs. Packaging uses the saved build identity.
-RESUKISU_REPO=https://github.com/ReSukiSU/ReSukiSU.git
+# Keep legacy SHA keys and checkout paths compatible with saved metadata and caches.
+BAKASU_REPO=https://github.com/Baka-SU/BakaSU.git
 if [[ $mode == --package ]]; then
     [[ -f out/build-info.json ]] || fail 'No successful build metadata. Run --build first.'
     RESUKISU_SHA=$(python3 -c 'import json; print(json.load(open("out/build-info.json"))["resukisu_sha"])')
@@ -39,11 +40,11 @@ elif [[ -n ${E1S_RESUKISU_SHA:-} ]]; then
     RESUKISU_SHA=$E1S_RESUKISU_SHA
 else
     # Resolve once, even with a cached checkout. Never fall back to stale code.
-    upstream=$(git ls-remote "$RESUKISU_REPO" HEAD)
+    upstream=$(git ls-remote "$BAKASU_REPO" HEAD)
     RESUKISU_SHA=${upstream%%$'\t'*}
 fi
-[[ $RESUKISU_SHA =~ ^[0-9a-f]{40}$ ]] || fail 'Invalid ReSukiSU commit.'
-printf 'ReSukiSU commit for this build: %s\n' "$RESUKISU_SHA"
+[[ $RESUKISU_SHA =~ ^[0-9a-f]{40}$ ]] || fail 'Invalid BakaSU commit.'
+printf 'BakaSU commit for this build: %s\n' "$RESUKISU_SHA"
 BUILD_KEY=$({
     sha256sum build.sh config/inputs.env config/tools.sha256 config/root.config config/anykernel.sh patches/*.patch scripts/*.py .github/workflows/build.yml
     printf '%s\n' "$RESUKISU_SHA"
@@ -89,7 +90,7 @@ checkout https://github.com/osm0sis/AnyKernel3.git "$ANYKERNEL_SHA" "$ROOT/.cach
 if [[ $mode != --package ]]; then
     download SM-S921B.zip "$SOURCE_SHA256"
     while read -r sha name; do download "$name" "$sha"; done < config/tools.sha256
-    checkout "$RESUKISU_REPO" "$RESUKISU_SHA" "$ROOT/.cache/resukisu"
+    checkout "$BAKASU_REPO" "$RESUKISU_SHA" "$ROOT/.cache/resukisu"
     checkout https://gitlab.com/simonpunk/susfs4ksu.git "$SUSFS_SHA" "$ROOT/.cache/susfs"
     if [[ -f $WORK/.prepared && $(cat "$WORK/.prepared") != "$BUILD_KEY" ]]; then
         # Keep the previous build while preparing a clean workspace for new inputs.
@@ -120,8 +121,8 @@ if [[ $mode != --package ]]; then
         cp config/root.config "$WORK/kernel/arch/arm64/configs/nawaf.config"
         printf '%s\n' "$BUILD_KEY" > "$WORK/.prepared"
     fi
-    [[ $(git -C "$WORK/kernel/ReSukiSU" rev-parse HEAD) == "$RESUKISU_SHA" ]] || fail 'Integrated ReSukiSU commit changed.'
-    [[ -z $(git -C "$WORK/kernel/ReSukiSU" status --porcelain) ]] || fail 'Integrated ReSukiSU source changed.'
+    [[ $(git -C "$WORK/kernel/ReSukiSU" rev-parse HEAD) == "$RESUKISU_SHA" ]] || fail 'Integrated BakaSU commit changed.'
+    [[ -z $(git -C "$WORK/kernel/ReSukiSU" status --porcelain) ]] || fail 'Integrated BakaSU source changed.'
     if [[ $mode == --prepare ]]; then
         printf 'Prepared: %s\n' "$WORK"
         exit 0
@@ -145,7 +146,7 @@ if [[ $mode != --package ]]; then
             --lto=thin --jobs="${JOBS:-12}" "//projects/s5e9945:$target"
     )
     [[ $mode != --config ]] || exit 0
-    [[ $(git -C "$WORK/kernel/ReSukiSU" rev-parse HEAD) == "$RESUKISU_SHA" ]] || fail 'ReSukiSU changed during build.'
+    [[ $(git -C "$WORK/kernel/ReSukiSU" rev-parse HEAD) == "$RESUKISU_SHA" ]] || fail 'BakaSU changed during build.'
     python3 "$ROOT/scripts/verify_kernel.py"
 fi
 

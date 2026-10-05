@@ -11,7 +11,7 @@ if hashlib.sha256(image).hexdigest() != info['image_sha256']:
     raise ValueError('Image changed since the successful build')
 stamp = datetime.datetime.fromisoformat(info['build_timestamp'].replace('Z', '+00:00'))
 name = (f"Nawaf-e1s-Kernel-{info['kernel_version']}-android{info['android_version']}"
-        f"-Nawaf-ReSukiSU-{info['resukisu_sha'][:7]}-SuSFS-{stamp:%Y%m%d-%H%M}.zip")
+        f"-Nawaf-BakaSU-{info['resukisu_sha'][:7]}-SuSFS-{stamp:%Y%m%d-%H%M}.zip")
 if not re.fullmatch(r'[A-Za-z0-9.-]+\.zip', name):
     raise ValueError('Unsafe package name')
 assets = stage / 'assets'

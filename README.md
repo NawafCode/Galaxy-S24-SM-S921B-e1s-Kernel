@@ -2,10 +2,10 @@
 
 [Arabic README](README.MD.AR)
 
-Samsung DZG1 kernel with ReSukiSU and SuSFS, built using Samsung's Bazel/Kleaf target.
+Samsung DZG1 kernel with [BakaSU](https://github.com/Baka-SU/BakaSU) (formerly ReSukiSU) and SuSFS, built using Samsung's Bazel/Kleaf target.
 
-Local builds and package checks pass. Flashing and booting on the phone have not been tested.
-Source and tool archives are provided in the `build-inputs-v1` release. GitHub Actions builds remain disabled until explicitly enabled in repository settings.
+Local builds and package checks pass. GitHub Actions has also built and published kernel packages successfully. Flashing and booting on the phone have not been tested.
+Source and tool archives are provided in the `build-inputs-v1` release. Automatic builds are enabled in this repository; forks must enable them in their own settings.
 
 ## Build
 
@@ -30,18 +30,20 @@ One command downloads and checks the inputs, integrates root support, builds, an
 The `release/` folder contains AnyKernel3 ZIP, `boot.img`, and `boot.img.tar`.
 
 ```text
-Nawaf-e1s-Kernel-<KERNEL_VERSION>-android<ANDROID_VERSION>-Nawaf-ReSukiSU-<SHA7>-SuSFS-<YYYYMMDD-HHMM>.zip
+Nawaf-e1s-Kernel-<KERNEL_VERSION>-android<ANDROID_VERSION>-Nawaf-BakaSU-<SHA7>-SuSFS-<YYYYMMDD-HHMM>.zip
 ```
 
-The ZIP name uses the built kernel version, source Android branch, verified ReSukiSU SHA, and build time in UTC. Repackaging keeps that name and timestamp.
+The ZIP name uses the built kernel version, source Android branch, verified BakaSU SHA, and build time in UTC. Repackaging keeps that name and timestamp.
 
 ## Inputs
 
 - Samsung source and tool archives: this repository's `build-inputs-v1` release, checked against their SHA-256 hashes.
-- ReSukiSU: the latest default-branch commit at each build startup, verified and fixed for that run. An upstream lookup failure stops the build. Repackaging uses the saved commit.
+- BakaSU: the latest default-branch commit at each build startup, verified and fixed for that run. An upstream lookup failure stops the build. Repackaging uses the saved commit.
 - SuSFS and AnyKernel3: fixed commits in `config/inputs.env`.
 
-The Magisk APK supplies ARM64 installer tools only; ReSukiSU provides root. Original licenses remain with the source and tool packages.
+The Magisk APK supplies ARM64 installer tools only; BakaSU provides root. Original licenses remain with the source and tool packages.
+
+Upstream now supports the BakaSU, official KernelSU, and KOWSU managers. Its built-in support for MKSU, RKSU, and SukiSU-Ultra managers was removed. This repository does not build or bundle a manager APK.
 
 Kernel settings are in `config/root.config`; patches are in `patches/`. Review boot image settings in `config/inputs.env` when changing firmware.
 
@@ -72,15 +74,15 @@ Configuration stays in `config/`, and source patches stay in `patches/`. Changes
 
 ## Automatic builds
 
-`.github/workflows/build.yml` runs the same build script on GitHub Actions. It checks ReSukiSU every six hours, on relevant pushes to `main`, or through **Run workflow**. Identical published build keys are skipped. The selected full ReSukiSU SHA stays fixed throughout preparation and compilation.
+`.github/workflows/build.yml` runs the same build script on GitHub Actions. It checks BakaSU every six hours, on relevant pushes to `main`, or through **Run workflow**. Identical published build keys are skipped. The selected full BakaSU SHA stays fixed throughout preparation and compilation.
 
-Before enabling it:
+To enable it in a new repository:
 
 1. Publish the five input archives as `build-inputs-v1`, without marking that input release Latest. Keep the URLs and hashes in `config/` correct for your repository.
 2. In repository **Settings → Secrets and variables → Actions → Variables**, add `ENABLE_KERNEL_CI` with value `true`.
 3. Run **Build e1s kernel** manually and review the logs and packages. Enabling this variable also enables the scheduled and push triggers, and a successful run publishes automatically.
 
-The default runner is `ubuntu-24.04`. The workflow removes unused Android/.NET/GHC/Boost SDK directories on GitHub-hosted runners, then requires 60 GiB free. This does not guarantee the standard runner will have enough space or memory. If the check fails, set the `KERNEL_RUNNER` repository variable to a suitable Linux x64 runner label available to the repository. Larger hosted runners can incur charges. Cloud build time and peak resource use have not been tested yet.
+The default runner is `ubuntu-24.04`. The workflow removes unused Android/.NET/GHC/Boost SDK directories on GitHub-hosted runners, then requires 60 GiB free. If the check fails, set the `KERNEL_RUNNER` repository variable to a suitable Linux x64 runner label available to the repository. Larger hosted runners can incur charges. Build time and resource use vary with the inputs and runner.
 
 The cache stores compressed input archives, not the compiled workspace. Restoring it still transfers data; extraction runs again, and SHA-256 checks always run. A cache miss falls back to the input release. No compiler cache is configured yet.
 
@@ -88,8 +90,8 @@ Only the release job has write access. It verifies the saved package checksums, 
 
 If publication fails after the package artifact was saved, use **Re-run failed jobs** within its 14-day retention period to retry publication without recompiling. A new workflow run does not automatically recover artifacts from older runs. Failed builds can be retried on the next trigger; only published successful builds are deduplicated. Schedules may be delayed by GitHub.
 
-`scripts/ci.py` handles the publication decision and release verification. It uses Python's standard library and the GitHub CLI already available on hosted runners. The internal `E1S_RESUKISU_SHA` handoff is restricted to Actions; normal local builds still resolve the latest upstream commit themselves. Neither the workflow nor the script flashes a phone.
+`scripts/ci.py` handles the publication decision and release verification. It uses Python's standard library and the GitHub CLI already available on hosted runners. The internal commit handoff is restricted to Actions; normal local builds still resolve the latest upstream commit themselves. Legacy metadata keys and cache paths are retained, and CI can read both ReSukiSU and BakaSU release notes. Neither the workflow nor the script flashes a phone.
 
 ### When CI rebuilds
 
-CI compares the latest selected ReSukiSU commit with the last published kernel. If local build inputs are unchanged and the complete upstream diff touches only `manager/` or `docs/`, it keeps the existing kernel. Changes elsewhere, renamed kernel files, divergent history or incomplete comparisons trigger a build. Git-derived version numbers alone do not trigger a rebuild for manager/docs-only commits; the published kernel retains its actual SHA and version. Local `./build.sh` still builds the newest commit.
+CI compares the latest selected BakaSU commit with the last published kernel. If local build inputs are unchanged and the complete upstream diff touches only `manager/` or `docs/`, it keeps the existing kernel. Changes elsewhere, renamed kernel files, divergent history or incomplete comparisons trigger a build. Git-derived version numbers alone do not trigger a rebuild for manager/docs-only commits; the published kernel retains its actual SHA and version. Local `./build.sh` still builds the newest commit.

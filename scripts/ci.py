@@ -64,7 +64,8 @@ def can_keep_published_kernel(info):
     if not latest or latest['draft'] or latest['prerelease']:
         return False
     tag = latest['tag_name']
-    match = re.search(r'^ReSukiSU: `([0-9a-f]{40})`$', latest.get('body', ''), re.M)
+    # Releases before the upstream rename used the ReSukiSU label.
+    match = re.search(r'^(?:BakaSU|ReSukiSU): `([0-9a-f]{40})`$', latest.get('body', ''), re.M)
     if not re.fullmatch(r'kernel-[0-9a-f]{64}', tag) or not match:
         return False
     base = match[1]
@@ -76,7 +77,7 @@ def can_keep_published_kernel(info):
     Path('out/resolved.json').write_text(json.dumps(info) + '\n')
     if tag != 'kernel-' + previous['build_key']:
         return False
-    comparison = github_json(f"repos/ReSukiSU/ReSukiSU/compare/{base}...{info['resukisu_sha']}")
+    comparison = github_json(f"repos/Baka-SU/BakaSU/compare/{base}...{info['resukisu_sha']}")
     return manager_or_docs_only(comparison, base, info['resukisu_sha'])
 
 
@@ -124,7 +125,7 @@ def main():
         if info['build_key'] != os.environ['EXPECTED_BUILD_KEY']:
             raise ValueError('Artifact build identity mismatch')
         if info['resukisu_sha'] != os.environ['EXPECTED_RESUKISU_SHA']:
-            raise ValueError('Artifact ReSukiSU identity mismatch')
+            raise ValueError('Artifact BakaSU identity mismatch')
         verify(info, Path('release'))
         tag = 'kernel-' + info['build_key']
         existing = release_for(tag)
@@ -135,13 +136,13 @@ def main():
             print('This exact build is already published.')
             return
         # Keep the upstream identity machine-readable without cluttering the page.
-        notes = (f"Automated build for resukisu\n\n"
+        notes = (f"Automated build for BakaSU\n\n"
                  f"Kernel Version: {info['kernel_version']}\n\n"
-                 f"<!--\nReSukiSU: `{info['resukisu_sha']}`\n"
+                 f"<!--\nBakaSU: `{info['resukisu_sha']}`\n"
                  f"Build: `{info['build_key']}`\n-->\n")
         Path('out/release-notes.md').write_text(notes)
         build_date = info['build_timestamp'].split('T')[0]
-        title = f"s24_Kernel Resuki-susfs-{info['kernel_version']} Build ({build_date})"
+        title = f"s24_Kernel BakaSU-susfs-{info['kernel_version']} Build ({build_date})"
         if existing is None:
             gh('release', 'create', tag, '--draft', '--target', os.environ['GITHUB_SHA'],
                '--title', title, '--notes-file', 'out/release-notes.md')
