@@ -83,6 +83,14 @@ checkout() {
     [[ $(git -C "$directory" rev-parse HEAD) == "$sha" ]] || fail "Commit mismatch: $directory"
 }
 
+verify_bakasu() {
+    local source="$WORK/kernel/ReSukiSU"
+    [[ $(git -C "$source" rev-parse HEAD) == "$RESUKISU_SHA" ]] || fail 'Integrated BakaSU commit changed.'
+    [[ $(git -C "$source" write-tree) == "$BAKASU_TREE" ]] || fail 'Integrated BakaSU patch changed.'
+    git -C "$source" diff --exit-code --quiet || fail 'Integrated BakaSU source changed.'
+    [[ -z $(git -C "$source" ls-files --others --exclude-standard) ]] || fail 'Untracked BakaSU source files.'
+}
+
 download Magisk-v30.7.apk "$MAGISK_SHA256"
 checkout https://github.com/osm0sis/AnyKernel3.git "$ANYKERNEL_SHA" "$ROOT/.cache/anykernel3"
 
@@ -106,23 +114,30 @@ if [[ $mode != --package ]]; then
         python3 "$ROOT/scripts/prepare.py" "$DOWNLOADS/SM-S921B.zip" "$WORK"
         while read -r sha name; do tar --zstd -xf "$DOWNLOADS/$name" -C "$WORK"; done < config/tools.sha256
         git clone --no-hardlinks "$ROOT/.cache/resukisu" "$WORK/kernel/ReSukiSU"
+        git -C "$WORK/kernel/ReSukiSU" apply --check "$ROOT/patches/bakasu-susfs.patch"
+        git -C "$WORK/kernel/ReSukiSU" apply --index "$ROOT/patches/bakasu-susfs.patch"
+        git -C "$WORK/kernel/ReSukiSU" write-tree > "$WORK/.bakasu-tree"
         # Running outside the parent Git repository prevents silently skipped paths.
         # The WLAN patch uses source-relative paths for local Kleaf builds.
-        for patch in susfs.patch bazel-local.patch; do
+        for patch in susfs.patch module-blacklist.patch bazel-local.patch; do
             git -C / apply --check --unsafe-paths --directory="$WORK/kernel" "$ROOT/patches/$patch"
             git -C / apply --unsafe-paths --directory="$WORK/kernel" "$ROOT/patches/$patch"
             git -C / apply --reverse --check --unsafe-paths --directory="$WORK/kernel" "$ROOT/patches/$patch"
         done
         cp "$ROOT/.cache/susfs/kernel_patches/fs/susfs.c" "$WORK/kernel/fs/"
         cp "$ROOT/.cache/susfs/kernel_patches/include/linux/"susfs*.h "$WORK/kernel/include/linux/"
+        git -C / apply --check --unsafe-paths --directory="$WORK/kernel" "$ROOT/patches/susfs-types.patch"
+        git -C / apply --unsafe-paths --directory="$WORK/kernel" "$ROOT/patches/susfs-types.patch"
+        git -C / apply --reverse --check --unsafe-paths --directory="$WORK/kernel" "$ROOT/patches/susfs-types.patch"
         ln -s ../ReSukiSU/kernel "$WORK/kernel/drivers/kernelsu"
         printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "$WORK/kernel/drivers/Makefile"
         printf '\nsource "drivers/kernelsu/Kconfig"\n' >> "$WORK/kernel/drivers/Kconfig"
         cp config/root.config "$WORK/kernel/arch/arm64/configs/nawaf.config"
         printf '%s\n' "$BUILD_KEY" > "$WORK/.prepared"
     fi
-    [[ $(git -C "$WORK/kernel/ReSukiSU" rev-parse HEAD) == "$RESUKISU_SHA" ]] || fail 'Integrated BakaSU commit changed.'
-    [[ -z $(git -C "$WORK/kernel/ReSukiSU" status --porcelain) ]] || fail 'Integrated BakaSU source changed.'
+    BAKASU_TREE=$(cat "$WORK/.bakasu-tree")
+    export BAKASU_TREE
+    verify_bakasu
     if [[ $mode == --prepare ]]; then
         printf 'Prepared: %s\n' "$WORK"
         exit 0
@@ -146,7 +161,7 @@ if [[ $mode != --package ]]; then
             --lto=thin --jobs="${JOBS:-12}" "//projects/s5e9945:$target"
     )
     [[ $mode != --config ]] || exit 0
-    [[ $(git -C "$WORK/kernel/ReSukiSU" rev-parse HEAD) == "$RESUKISU_SHA" ]] || fail 'BakaSU changed during build.'
+    verify_bakasu
     python3 "$ROOT/scripts/verify_kernel.py"
 fi
 

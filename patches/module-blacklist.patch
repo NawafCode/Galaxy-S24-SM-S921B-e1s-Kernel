@@ -1,0 +1,34 @@
+BakaSU inline module blacklist integration for Samsung's Linux 6.1 loader.
+Keep the initial capability and input validation checks outside these hooks.
+
+--- a/kernel/module/main.c
++++ b/kernel/module/main.c
+@@ -3072,3 +3072,8 @@
++#ifdef CONFIG_KSU_SUSFS
++extern void ksu_handle_init_module(int *result);
++extern void ksu_handle_finit_module(int *result);
++#endif
++
+ SYSCALL_DEFINE3(init_module, void __user *, umod,
+ 		unsigned long, len, const char __user *, uargs)
+ {
+@@ -3089,4 +3094,8 @@
+-	return load_module(&info, uargs, 0);
++	err = load_module(&info, uargs, 0);
++#ifdef CONFIG_KSU_SUSFS
++	ksu_handle_init_module(&err);
++#endif
++	return err;
+ }
+ 
+ SYSCALL_DEFINE3(finit_module, int, fd, const char __user *, uargs, int, flags)
+@@ -3125,4 +3134,8 @@
+-	return load_module(&info, uargs, flags);
++	err = load_module(&info, uargs, flags);
++#ifdef CONFIG_KSU_SUSFS
++	ksu_handle_finit_module(&err);
++#endif
++	return err;
+ }
+ 
+ static inline int within(unsigned long addr, void *start, unsigned long size)

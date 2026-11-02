@@ -1,6 +1,7 @@
 /.cache/
 /out/
 /release/
+/tests/
 /backup/
 /kernel/
 /projects/

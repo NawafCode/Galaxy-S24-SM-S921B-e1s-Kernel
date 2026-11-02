@@ -1,5 +1,8 @@
-"""Create and verify AnyKernel3 ZIP, boot.img, and boot.img.tar.
-Inputs: build.sh environment and verified metadata. Updates release/ and metadata; preserves changed releases."""
+"""Create and check the AnyKernel3 ZIP, boot.img, and boot.img.tar.
+
+Read settings from build.sh and the verified build metadata.
+Save packages in release/ and back up existing packages when their contents change.
+"""
 
 import datetime, hashlib, io, json, os, pathlib, re, struct, subprocess, tarfile, tempfile, zipfile
 root, dist, stage = (pathlib.Path(os.environ[k]) for k in ('ROOT', 'DIST', 'STAGE'))
@@ -67,4 +70,4 @@ if not unchanged:
         raise
 (stage / 'build-info.json').replace(root / 'out/build-info.json')
 print('Verified build packages:', release)
-print('Hardware flashing/boot tests: NOT performed.')
+print('Package checks complete. Phone testing is a separate step.')

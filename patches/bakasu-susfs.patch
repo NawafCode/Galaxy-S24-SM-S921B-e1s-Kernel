@@ -1,0 +1,156 @@
+Bridge BakaSU 516d3e87 to SuSFS 0d5b1ceb (gki-android14-6.1).
+Port the policy tracking and priority UID filter wiring from SuSFS's
+KernelSU patch. Track AVTAB_ALLOWED only: audit rules share the same
+source/target/class tuple but do not contain an access decision.
+Rename BakaSU's blacklist pointer so built-in symbol lookup finds the
+kernel loader's module_blacklist rather than the pointer itself.
+
+diff --git a/kernel/feature/module_blacklist.c b/kernel/feature/module_blacklist.c
+index 18df7a00..6305521d 100644
+--- a/kernel/feature/module_blacklist.c
++++ b/kernel/feature/module_blacklist.c
+@@ -12,7 +12,7 @@
+ #if defined(KSU_COMPAT_HAS_INSMOD_HOOK) || defined(CONFIG_KSU_TRACEPOINT_HOOK)
+ static char *blacklist = NULL;
+ static char *orig_blacklist = NULL;
+-static char **module_blacklist = NULL;
++static char **ksu_module_blacklist_ptr = NULL;
+ 
+ // workaround https://cs.android.com/android/platform/superproject/+/android-latest-release:system/core/libmodprobe/utils.cpp;l=73
+ // userspace will throw error when ret != 0
+@@ -71,13 +71,13 @@ void __init ksu_module_blacklist_init(const char *modules)
+     if (!modules[0] && !extra[0])
+         return;
+ 
+-    module_blacklist = (char **)find_kernel_symbol_exact("module_blacklist");
+-    if (!module_blacklist) {
++    ksu_module_blacklist_ptr = (char **)find_kernel_symbol_exact("module_blacklist");
++    if (!ksu_module_blacklist_ptr) {
+         pr_warn("module_blacklist: kernel symbol not found, skipping blocked modules\n");
+         return;
+     }
+ 
+-    existing = *module_blacklist;
++    existing = *ksu_module_blacklist_ptr;
+     existing_len = existing ? strlen(existing) : 0;
+     blacklist =
+         kasprintf(GFP_KERNEL, "%s%s%s%s", existing_len ? existing : "", existing_len ? "," : "", modules, extra);
+@@ -86,7 +86,7 @@ void __init ksu_module_blacklist_init(const char *modules)
+         return;
+     }
+ 
+-    *module_blacklist = blacklist;
++    *ksu_module_blacklist_ptr = blacklist;
+     orig_blacklist = (char *)existing;
+     pr_info("module_blacklist: blocked modules: %s\n", blacklist);
+ 
+@@ -101,7 +101,7 @@ void __exit ksu_module_blacklist_exit()
+ {
+     const char *existing;
+ 
+-    if (module_blacklist == NULL) {
++    if (ksu_module_blacklist_ptr == NULL) {
+         // that's mean no modules got block
+         return;
+     }
+@@ -118,14 +118,14 @@ void __exit ksu_module_blacklist_exit()
+         return;
+     }
+ 
+-    existing = *module_blacklist;
++    existing = *ksu_module_blacklist_ptr;
+ 
+     if (existing != blacklist) {
+         pr_warn("module_blacklist: looks module_blacklist changed by other, skip kfree and revert changes!\n");
+         return;
+     }
+ 
+-    *module_blacklist = orig_blacklist;
++    *ksu_module_blacklist_ptr = orig_blacklist;
+     kfree(blacklist); // kasprintf alloc
+ 
+     pr_info("module_blacklist: blacklist reverted and memory freed!\n");
+@@ -140,4 +140,4 @@ void __exit ksu_module_blacklist_exit()
+ {
+     // nothing to do
+ }
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/kernel/manager/pkg_observer.c b/kernel/manager/pkg_observer.c
+index cab74ce5..cfbf62c0 100644
+--- a/kernel/manager/pkg_observer.c
++++ b/kernel/manager/pkg_observer.c
+@@ -8,6 +8,9 @@
+ #include <linux/rculist.h>
+ #include <linux/task_work.h>
+ #include <linux/version.h>
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs.h>
++#endif
+ #include "klog.h" // IWYU pragma: keep
+ #include "manager/throne_tracker.h"
+ 
+@@ -30,6 +33,9 @@ static void ksu_track_throne_tw_func(struct callback_head *cb)
+     if (current->flags & PF_EXITING)
+         return;
+     track_throne(TRACK_THRONE_FORCE_SYNCHRONOUS);
++#ifdef CONFIG_KSU_SUSFS
++    susfs_parse_priority_app_strings();
++#endif
+ }
+ 
+ // Never scan from the fsnotify handler: fsnotify_mark_srcu and the rename's dir
+diff --git a/kernel/selinux/sepolicy.c b/kernel/selinux/sepolicy.c
+index 288d55b0..ec2b7e5f 100644
+--- a/kernel/selinux/sepolicy.c
++++ b/kernel/selinux/sepolicy.c
+@@ -16,6 +16,11 @@
+ #include "sepolicy.h"
+ #include "klog.h" // IWYU pragma: keep
+ #include "ss/symtab.h"
++
++#ifdef CONFIG_KSU_SUSFS
++extern int susfs_add_sus_avd_allowed_by_type(u32 s_type, u32 t_type, u32 c_type, u32 orig_avd_allowed);
++extern int susfs_add_sus_type(const char *secctx, u32 type_value);
++#endif
+ #include "compat/kernel_compat.h" // Add check Huawei Device
+ 
+ #define KSU_SUPPORT_ADD_TYPE
+@@ -338,6 +343,11 @@ static bool add_rule_raw(struct policydb *db, struct type_datum *src, struct typ
+                 return false;
+         }
+ 
++#ifdef CONFIG_KSU_SUSFS
++        if (effect == AVTAB_ALLOWED)
++            susfs_add_sus_avd_allowed_by_type(src->value, tgt->value, cls->value, node->datum.u.data);
++#endif
++
+         if (invert) {
+             if (perm)
+                 node->datum.u.data &= ~(1U << (perm->value - 1));
+@@ -761,6 +771,9 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+         ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1, 1);
+     }
+ 
++#ifdef CONFIG_KSU_SUSFS
++    susfs_add_sus_type(type_name, type->value);
++#endif
+     return true;
+ 
+     // safe? because only huawei do this fucking things
+diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
+index c23a7cb4..dc05cf1a 100644
+--- a/kernel/supercall/dispatch.c
++++ b/kernel/supercall/dispatch.c
+@@ -1168,6 +1168,10 @@ int ksu_handle_susfs_cmd(unsigned int cmd, void __user **arg)
+         return 0;
+     }
+ #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++    case CMD_SUSFS_SET_PRIORITY_UID_FILTER: {
++        susfs_set_priority_uid_filter(arg);
++        return 0;
++    }
+     case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING: {
+         susfs_set_avc_log_spoofing(arg);
+         return 0;

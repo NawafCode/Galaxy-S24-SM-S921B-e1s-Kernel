@@ -1,0 +1,26 @@
+SuSFS 0d5b1ceb stores only the hash bucket for hidden SELinux types.
+Compare the complete type ID so a collision cannot hide an unrelated stock type.
+
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -51,3 +51,4 @@
+ struct st_susfs_sus_type_hlist {
+ 	struct hlist_node                       node;
++	u32                                    type_value;
+ };
+@@ -61,3 +62,5 @@
+ 	hash_for_each_possible_safe(SUS_TYPE_HLIST, tmp_entry, tmp_hlist_node, node, type_value) {
++		if (tmp_entry->type_value != type_value)
++			continue;
+ 		SUSFS_LOGE("secctx '%s', type_value '%u', was added before already\n",
+ 			secctx, type_value);
+@@ -74,2 +77,3 @@
++	new_entry->type_value = type_value;
+ 	hash_add_rcu(SUS_TYPE_HLIST, &new_entry->node, type_value);
+ 	SUSFS_LOGI("secctx '%s', type '%u', has been added to SUS_TYPE_HLIST\n",
+@@ -85,3 +89,4 @@
+ 	hash_for_each_possible_rcu(SUS_TYPE_HLIST, entry, node, type_value) {
+-		return true;
++		if (entry->type_value == type_value)
++			return true;
+ 	}
