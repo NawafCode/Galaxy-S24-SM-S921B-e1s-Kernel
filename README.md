@@ -82,7 +82,60 @@ Use a compatible BakaSU Manager and `ksud` that support UAPI v6, the interface u
 
 For this built-in kernel (`CONFIG_KSU=y`), forced feature values use kernel boot parameters, such as `kernelsu.force_feature=shell_su_adb_only:1`. The upstream `/ksu_config` ramdisk file is for the module-based root loader. This project does not force feature values or add boot parameters.
 
+## Tuning and hiding
+
+These kernel settings differ from the Samsung default:
+
+| Setting | Effect |
+| --- | --- |
+| `CONFIG_TCP_CONG_BBR` and `CONFIG_DEFAULT_BBR` | BBR is the default congestion control. CUBIC stays available. |
+| `CONFIG_DEFAULT_FQ` | `fq` is the default queue discipline, which BBR uses for pacing. |
+| `CONFIG_ZRAM_DEF_COMP_ZSTD` | New zram devices default to zstd instead of lzo-rle. Userspace can still choose another algorithm. |
+| `CONFIG_NTFS3_FS=y` | Read and write NTFS drives over USB OTG. |
+
+BBR can behave differently from CUBIC on lossy mobile links. Battery use and
+throughput have not been measured yet.
+
+All SuSFS kernel switches are enabled. Their settings are not stored in the
+kernel: a root tool adds paths and identifiers while the phone runs, and a
+reboot restores the defaults. The usual entries are the KSU state directories
+(`/data/adb/modules`, `/data/adb/ksu`, `/data/adb/modules_update`), `sus_map`
+for files loaded from a stored path, `hide_sus_mnts_for_non_su_procs 1`, a
+spoofed `uname` release, and a bootconfig copy without the unlocked-boot
+markers. The `selinux_hide` feature is separate and is toggled through `ksud`.
+
+These entries only affect app processes at UID 10000 and above, so check hiding
+from an app, not from root or ADB shell. Nothing is forced at boot; a module or
+script has to apply the entries again after each reboot. The local test tooling
+builds an optional `e1s-susfs-hide` module that re-applies them after
+`post-fs-data`. It uses `add_sus_path_loop` for paths because f2fs can drop a
+cold inode flag; `sus_map` has no loop variant, so the module also refreshes it
+after boot.
+
 ## Validation
+
+### Device hiding checks — 2026-11-04
+
+Checked on the tuning build with the test app at UID 10382 from the
+`untrusted_app` domain:
+
+| Check | Result |
+| --- | --- |
+| App sees the sus_path probe file | `ENOENT` |
+| Mapped sample in `/proc/self/maps` | 0 lines |
+| `uname -r` | stock-style release, no `-nawaf-bakasu` |
+| `susfs_init` / `ksu_handle_execveat` in `kallsyms` | hidden |
+| `linux_banner` in `kallsyms` (control) | still present |
+| `orange` marker in `bootconfig` | 0 |
+
+`selinux_hide` was enabled through `ksud` during the run and disabled again
+after it. The same checks passed from a fresh boot with the optional module
+installed, which shows the entries are restored automatically. Long-running
+inode eviction is handled by `add_sus_path_loop` plus the module's periodic
+`sus_map` refresh.
+
+The test module, app, and device-side files were removed afterwards. SELinux
+was Enforcing after the final reboot.
 
 ### Local checks — 2026-11-01
 

@@ -46,6 +46,11 @@ for line in (root / 'config/root.config').read_text().splitlines():
         key = line.split()[1]
         if any(value.startswith(key + '=') and value != key + '=n' for value in config):
             raise ValueError('Disabled option enabled: ' + key)
+# Choice symbols are set indirectly; check the resolved strings as well.
+for expected in ('CONFIG_DEFAULT_TCP_CONG="bbr"', 'CONFIG_DEFAULT_NET_SCH="fq"',
+                 'CONFIG_ZRAM_DEF_COMP="zstd"', 'CONFIG_NTFS3_FS=y'):
+    if expected not in config:
+        raise ValueError('Tuning did not resolve: ' + expected)
 info = dict(build_key=os.environ['BUILD_KEY'], build_timestamp=os.environ['BUILD_STARTED'],
             kernel_release=release, kernel_version=version, android_version=branch[1],
             resukisu_sha=os.environ['RESUKISU_SHA'], susfs_sha=os.environ['SUSFS_SHA'],
